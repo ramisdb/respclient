@@ -23,24 +23,6 @@
 #include "respClient.h"
 
 
-/*
-
-#define RESPCLIENTBUFSZ 1000000 // Transmit and recieve buffer size
-
-#define RESPCLIENT struct RespClientStruct
-RESPCLIENT
-{
-  RESPROTO   *rppTo;             // resp protocol handler to server
-  RESPROTO   *rppFrom;
-  byte       *fromBuf;           // where we put junk from the server
-  byte       *fromReadp;         // where the next read from server will go
-  size_t      fromBufSize;       // how big is the buffer overall now
-  size_t      fromBufRemaining;  // bytes left available to read into
-  FILE       *fhToServer;
-  int        socket;
-};
-
-*/
 
 RESPCLIENT *
 closeRespClient(RESPCLIENT *rcp)
@@ -209,8 +191,10 @@ getRespReply(RESPCLIENT *rcp)
   
   do
   {
-       if(!waitForRespData(rcp))
-         return(NULL);
+       // if waitForever is set we'll just block on the read instead of polling with a timeout
+       if(!rcp->waitForever)
+         if(!waitForRespData(rcp))
+            return(NULL);
        
        nread=read(rcp->socket,rcp->fromReadp,bufAvailable);
        if(nread<=0)     // server closed or error

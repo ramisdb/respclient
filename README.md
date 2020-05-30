@@ -82,6 +82,13 @@ RESPROTO *  getRespReply(RESPCLIENT *rcp);
 char *respClienError(RESPCLIENT *rcp);
 ```
 `respClienError()` checks to see if there were any errors during the execution of a command. It will return `NULL` if everything was ok, or an error message if not.
+
+```C
+// Force the socket to block waiting for data forever
+respClientWaitForever(RESPCLIENT *rcp,[1|0]);
+```
+Normally `getRespReply()` and `sendRespCommand()` will timeout after predefined amount of time if they do not recieve a reply. This is correct except when using `SUBSCRIBE` or `PSUBSCRIBE` and waiting for new `PUBLISH` messages. Using this function will force the API to wait. See the example in `main.c`  
+
      
 ```C
 // disconnect and free resources

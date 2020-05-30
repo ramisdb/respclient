@@ -27,6 +27,7 @@ RESPCLIENT
   int         socket;            // the raw socket
   char       *hostname;          // these are kept from the initial open so we can reconnect
   int         port;
+  int         waitForever;       // disables RESPCLIENTTIMEOUT for SUBSCRIBE commands
 };
 
 // https://stackoverflow.com/questions/5891221/variadic-macros-with-zero-arguments explains the ## below
@@ -49,5 +50,7 @@ RESPROTO *  sendRespCommand(RESPCLIENT *rcp,char *fmt,...);
 
 // Sees if anything went wrong. If everything's ok returns NULL , otherwise an error message.
 char *respClienError(RESPCLIENT *rcp);
+
+#define respClientWaitForever(rcp,true_false) rcp->waitForever=true_false
 
 #endif /* respClient_h */

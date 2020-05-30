@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h> // this is only needed for sending news in another thread for main's example
+#include <unistd.h>  // only needed for sleep
 #include "ramis.h"
 #include "resp_protocol.h"
 #include "respClient.h"
@@ -139,6 +141,30 @@ printErrors(RESPCLIENT *rcp)
 }
 
 
+void *sendNews(void *nothing)
+{
+  RESPCLIENT *respClient=connectRespServer("127.0.0.1",6379);
+  if(respClient)
+  {
+    sleep(1); // wait for second to ensure the SUBSCRIBE thread is ready waiting
+    sendRespCommand(respClient,"PUBLISH RamisNews %s","Global warming is something we need to fix now!");
+  }
+ pthread_exit(NULL);
+}
+
+int newsThread()
+{
+   pthread_t newsThread;
+   
+   if(pthread_create(&newsThread, NULL,sendNews,NULL))
+   {
+       printf("ERROR: pthread_create for PUBLISH failed\n");
+       exit(EXIT_FAILURE);
+   }
+  return(1);
+}
+
+
 int main(int argc, const char * argv[])
 {
   
@@ -175,6 +201,21 @@ int main(int argc, const char * argv[])
      response=sendRespCommand(respClient,"PING");
      printResponse(response);
      printErrors(respClient);
+     
+     if(newsThread())
+     {
+         respClientWaitForever(respClient,1); // we're going to use subscribe
+         response=sendRespCommand(respClient,"SUBSCRIBE RamisNews");
+         printResponse(response); // this is the response from the subscribe command
+        
+         response=getRespReply(respClient); // now we're waiting for news to be published
+         printResponse(response);
+        
+         respClientWaitForever(respClient,0); // use normal poll() wait
+         response=sendRespCommand(respClient,"UNSUBSCRIBE RamisNews");
+         printResponse(response); // this is the response from the subscribe command
+     }
+
      
      response=sendRespCommand(respClient,"MULTI");
      printResponse(response);
@@ -254,6 +295,15 @@ int main(int argc, const char * argv[])
      printErrors(respClient);
      
      // Since sendRespCommand can't do %04d lets talk using RESP's one line command method
+     for(int i=0;i<100;i++)
+     {
+         fprintf(respClient->fhToServer,"SET mykey%04d %d\n",i,i);
+         fflush(respClient->fhToServer); // This is mandatory or you'll get out of sync with server
+         response=getRespReply(respClient);
+         printResponse(response);
+         printErrors(respClient);
+     }
+
      response=sendRespCommand(respClient,"keys mykey*");
      if(response->nItems!=101) // 101 because of array declaration
        printf("ERROR: Counts dont match\n");
@@ -262,4 +312,5 @@ int main(int argc, const char * argv[])
      printResponse(response);
      printErrors(respClient);
   }
+   pthread_exit(NULL);
 }
