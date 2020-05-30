@@ -19,7 +19,7 @@ RESPROTO *  sendRespCommand(RESPCLIENT *rcp,char *fmt,...);
 ```
 
 
-`sendRespCommand()` is the primary metheod of sending commands to the server. It is is a `printf`-like command that sends RESP encoded commands to the server, and returns the server's reply in a pointer to a `RESPROTO` struct, or `NULL` if there was an error. Calling  `respClienError()` will return a string describing the error.
+`sendRespCommand()` is the primary method of sending commands to the server. It is is a `printf`-like command that sends RESP encoded commands to the server, and returns the server's reply in a pointer to a `RESPROTO` struct, or `NULL` if there was an error. Calling  `respClientError()` will return a string describing the error.
 
 `sendRespCommand()`  encodes the contents of the `fmt` string and the following variadic arguments in a manner similar to printf. So, `sendRespCommand(rcp,"SET %s %s","foo","bar");` will result in the following being transmitted to the server:
 ```ascii
@@ -81,7 +81,7 @@ RESPROTO *  getRespReply(RESPCLIENT *rcp);
 // Sees if anything went wrong. If everything's ok returns NULL , otherwise an error message.
 char *respClienError(RESPCLIENT *rcp);
 ```
-`respClienError()` checks to see if there were any errors during the execution of a command. It will return `NULL` if everthing was ok, or a error message if not.
+`respClienError()` checks to see if there were any errors during the execution of a command. It will return `NULL` if everything was ok, or an error message if not.
      
 ```C
 // disconnect and free resources
