@@ -87,7 +87,7 @@ char *respClienError(RESPCLIENT *rcp);
 // Force the socket to block waiting for data forever
 respClientWaitForever(RESPCLIENT *rcp,[1|0]);
 ```
-Normally `getRespReply()` and `sendRespCommand()` will timeout after predefined amount of time if they do not recieve a reply. This is correct except when using `SUBSCRIBE` or `PSUBSCRIBE` and waiting for new `PUBLISH` messages. Using this function will force the API to wait. See the example in `main.c`  
+Normally `getRespReply()` and `sendRespCommand()` will timeout after predefined amount of time if they do not recieve a reply. This is correct except when using `SUBSCRIBE` or `PSUBSCRIBE` and waiting for new `PUBLISH` messages. Using this function will force the API to wait. See the example in `client_example.c`  
 
      
 ```C

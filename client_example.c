@@ -1,5 +1,5 @@
 //
-//  main.c
+//  client_example.c
 //  ramis_client
 //
 //  Created by P. B. Richards on 5/20/20.
