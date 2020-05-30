@@ -1,27 +1,27 @@
 # RESP Client
 ## A simple lightweight C client to Redis or Ramis
 
-The API consists of:
-
-`connectRepServer()` does what is says. It returns a `RESPCLIENT *` That you'll use for the remainder of the conversation with the host, or `NULL` on error.
-
-`reconnectRespServer()` will close and re-open a connection to the server. This function will reset all the `RESPCLIENT` buffers to their initial state as well. This function should be called if you suspect you might have become out of sync with the server's replies.
-
+The API:
 ```C
 // connect to the RESP Server
 RESPCLIENT *connectRespServer(char *hostname,int port);
+
 // closes and reopens the connection to the server and resets the buffers
 int reconnectRespServer(RESPCLIENT *rcp);
 ```
+`connectRepServer()` does what is says. It returns a `RESPCLIENT *` That you'll use for the remainder of the conversation with the host, or `NULL` on error.
 
-`sendRespCommand()` is the primary metheod of sending commands to the server. It is is a `printf`-like command that sends RESP encoded commands to the server, and returns the server's reply in a pointer to a `RESPROTO` struct, or `NULL` if there was an error. Calling  `respClienError()` will return a string describing the error.
+`reconnectRespServer()` will close and re-open a connection to the server. This function will reset all the `RESPCLIENT` buffers to their initial state as well. It should be called if you suspect you might have become out of sync with the server's replies.
 
-```c
+```C
 // a formatted way to send data to the server
 RESPROTO *  sendRespCommand(RESPCLIENT *rcp,char *fmt,...);
 ```
 
-`sendRespCommand()`  encodes the contents of the `fmt` string and the following variable arguments in a manner similar to printf. So, `sendRespCommand(rcp,"SET %s %s","foo","bar");` will result in the following being transmitted to the server:
+
+`sendRespCommand()` is the primary metheod of sending commands to the server. It is is a `printf`-like command that sends RESP encoded commands to the server, and returns the server's reply in a pointer to a `RESPROTO` struct, or `NULL` if there was an error. Calling  `respClienError()` will return a string describing the error.
+
+`sendRespCommand()`  encodes the contents of the `fmt` string and the following variadic arguments in a manner similar to printf. So, `sendRespCommand(rcp,"SET %s %s","foo","bar");` will result in the following being transmitted to the server:
 ```ascii
 *3\r\n
 $3\r\n
@@ -65,8 +65,9 @@ Usage of `%b` requires two arguments. The first is a pointer to a buffer of bina
 // gets a reply from the RESP server and parses it into items list within the RESPROTO struct
 RESPROTO *  getRespReply(RESPCLIENT *rcp);
 ```
+`getRespReply()` Is used when a command is sent to the server via an `fprintf()`. It returns a `RESPROTO *` in the same manner as `sendRespCommand()`, or `NULL` upon error.
 
-It is also possible to directly use `fprintf()` to send an ascii one line command to the server per the RESP protocol spec. Use `getRespReply(RESPCLIENT *rcp)` to parse the server's reply. Here's an example:
+ The RESP protocol spec allows one to send an ascii one line command to the server. The file handle `fhToServer` within the `RESPCLIENT` struct may be used with `fprintf()` to accomplish this. Use `getRespReply(RESPCLIENT *rcp)` to parse the server's reply. Here's an example:
 
      for(int i=0;i<100;i++)
      {
@@ -76,35 +77,78 @@ It is also possible to directly use `fprintf()` to send an ascii one line comman
          // Do something with the reply here
      }
      
-     
-
-
-
-
-
-
-
-
-
-
-
-
-
-// gets a reply from the RESP server and parses it into items list within the RESPROTO struct
-RESPROTO *  getRespReply(RESPCLIENT *rcp);
-
-// closes and reopens the connection to the server and resets the buffers
-int reconnectRespServer(RESPCLIENT *rcp);
-
-// connect to the RESP Server
-RESPCLIENT *connectRespServer(char *hostname,int port);
-
-// disconnect and free resources
-RESPCLIENT *closeRespClient(RESPCLIENT *rcp);
-
-// a formatted way to send data to the server
-RESPROTO *  sendRespCommand(RESPCLIENT *rcp,char *fmt,...);
-
+```C
 // Sees if anything went wrong. If everything's ok returns NULL , otherwise an error message.
 char *respClienError(RESPCLIENT *rcp);
+```
+`respClienError()` checks to see if there were any errors during the execution of a command. It will return `NULL` if everthing was ok, or a error message if not.
+     
+```C
+// disconnect and free resources
+RESPCLIENT *closeRespClient(RESPCLIENT *rcp);
+```  
+closeRespClient() should be called at the end of the conversation with the server. It will close the sockets and free allocated memory.
+
+## Processing server results
+
+Both `sendRespCommand()` and `getRespReply()` return a pointer to a `RESPROTO` struct. The parsed results from the server are contained in an array of `RESPITEM` structs named `items` within the `RESPROTO`. `nItems` will indicate how many `RESPITEM`s there are. See `resp_protocol.h` for more information. 
+
+Here's an example of how to iterate through the server's response:
+
+```C
+void
+printResponse(RESPROTO *response)
+{
+  int i;
+ 
+    if(response)
+     {
+       RESPITEM *item=response->items;
+      
+       for(i=0;i<response->nItems;i++,item++)
+       {
+         switch(item->respType)
+         {
+            case RESPISNULL:     printf("A NULL\n");break;
+            
+                                // Note: REDIS does not have Float types but Ramis does
+            case RESPISFLOAT:    printf("Floating Point:%lf\n",item->rfloat);break;
+            
+            case RESPISINT:      printf("Integer: %lld\n",item->rinteger);break;
+            
+            case RESPISARRAY:    printf("An array of %lld items\n",item->nItems);break;
+            
+            case RESPISBULKSTR:  printf("Bulk string (binary) of length %zd: ",item->length);
+                                 fwrite(item->loc,1,item->length,stdout);
+                                 printf("\n");
+                                 break;
+            
+            case RESPISSTR:      printf("%s\n",item->loc);break;
+            
+            case RESPISPLAINTXT: printf("%s\n",item->loc);break;
+            
+            case RESPISERRORMSG: printf("Error message: %s\n",item->loc);break;
+         }
+       }
+     }
+    else printf("NULL response == Error\n");
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -254,14 +254,6 @@ int main(int argc, const char * argv[])
      printErrors(respClient);
      
      // Since sendRespCommand can't do %04d lets talk using RESP's one line command method
-     for(int i=0;i<100;i++)
-     {
-         fprintf(respClient->fhToServer,"SET mykey%04d %d\n",i,i);
-         fflush(respClient->fhToServer); // This is mandatory or you'll get out of sync with server
-         response=getRespReply(respClient);
-         printResponse(response);
-         printErrors(respClient);
-     }
      response=sendRespCommand(respClient,"keys mykey*");
      if(response->nItems!=101) // 101 because of array declaration
        printf("ERROR: Counts dont match\n");
