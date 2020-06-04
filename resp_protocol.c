@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -420,6 +421,7 @@ respParseError(RESPROTO *rpp,char *str)
 }
 
 
+
 /*
    *4             array
       *2          array
@@ -443,11 +445,11 @@ respParseError(RESPROTO *rpp,char *str)
 int
 parseResProto(RESPROTO *rpp,byte *buf,size_t bufLen,int newBuffer)
 {
-   byte *p,*end;            // p is where were at in the parse, end is 1 past the end of valid data
-   byte *restoreTo;         // this is used to roll back on a partial parse
+   byte     *p,*end;        // p is where were at in the parse, end is 1 past the end of valid data
+   byte     *restoreTo;     // this is used to roll back on a partial parse
    double   floatingPoint;  // used to parse numbers out of protocol
    int64_t  integer;        // used to parse numbers out of protocol
-   
+   RESPITEM *thisItem;
    
    rpp->errorMsg=NULL;
    
@@ -465,7 +467,6 @@ parseResProto(RESPROTO *rpp,byte *buf,size_t bufLen,int newBuffer)
    while(p<end)
    {
      byte *nextItem=isThereEOL(p,end);
-     RESPITEM *thisItem;
      
      if(nextItem==NULL) // we didn't get a complete line
      {
@@ -544,23 +545,34 @@ parseResProto(RESPROTO *rpp,byte *buf,size_t bufLen,int newBuffer)
          {
             if(!parseRespNumber(rpp,p+1,&floatingPoint,&integer))
                return(respParseError(rpp,"RESP invalid integer length in bulk string ($N\\r\\n)"));
-
+            
+            if(integer==-1) // NULL Reply
+            {
+               thisItem->respType=RESPISNULL;
+               thisItem->loc=NULL;
+               decrementArray(rpp);
+               ++rpp->nItems;
+               break;
+            }
+            
             thisItem->length=integer;
             thisItem->respType=RESPISBULKSTR;
             
-            if(nextItem+integer+1>=end) // the +1 is for the \r\n terminator
+            if(nextItem+integer<end)
             {
-               rpp->currPointer=restoreTo;      // fall back
-               return(RESP_PARSE_INCOMPLETE);
+              byte *testEol=isThereEOL(nextItem+integer,end);
+              if(!testEol)
+                  return(RESP_PARSE_INCOMPLETE);
+              else
+                  {
+                     thisItem->loc=nextItem;
+                     nextItem=testEol;
+                     decrementArray(rpp);
+                     ++rpp->nItems;
+                     break;
+                  }
             }
-            
-            thisItem->loc=nextItem;
-            nextItem=isThereEOL(nextItem+integer,end);
-            
-            
-            decrementArray(rpp);
-            ++rpp->nItems;
-            break;
+            else return(RESP_PARSE_INCOMPLETE);
          }
          default :                  // could be an ascii command string for the server
          {
@@ -689,111 +701,6 @@ respPrintfItems(char *s)
 }
 
 
-#define NUMBERBUFSZ DBL_DECIMAL_DIG+10 // longest length of a printed floating point number ( + 10 for no good reason)
-
-// RESP encodes parameters in a printf kind of way and outputs them to fh
-// returns RAMISFAIL or RAMISOK
-int
-respPrintf(RESPROTO *rpp,FILE *fh,char *fmt,...)
-{
-  //byte   *p=(byte *)fmt;
-  byte   *q;
-  byte    t;
-  size_t    thisLen;
-  char   *nullBulkString="$-1\r\n";
-  byte   *p=(byte *)strdup(fmt);
-#ifdef TALKREDIS
-  char    numberBuf[NUMBERBUFSZ];
-#endif 
-  va_list arg;
-
-
-  fprintf(fh,"*%d\r\n",respPrintfItems(fmt)); // start the array
-  va_start(arg,fmt);
-  while(*p)
-  {
-      if(*p!='%') // it's not an escape sequence so codify as simple string
-      {
-        q=skipGraph(p);
-        thisLen=q-p;
-        t=*q;
-        *q='\0';
-        fprintf(fh,"$%ld\r\n%s\r\n",strlen((char *)p),(char *)p);
-        *q=t;
-         p=skipSpace(q);
-      }
-      else // it's an escape sequence
-      {
-         ++p;
-         if(!strncmp("lld",(char *)p,3))  {fprintf(fh,":%lld\r\n",va_arg(arg,int64_t));p+=3;}
-         else
-         if(!strncmp("ld",(char *)p,2))   {fprintf(fh,":%ld\r\n",va_arg(arg,long));p+=2;}
-         else
-         if(*p=='d')                      {fprintf(fh,":%d\r\n",va_arg(arg,int));p++;}
-         else
-         
-         if(!strncmp("llu",(char *)p,3))  {fprintf(fh,":%llu\r\n",va_arg(arg,uint64_t));p+=3;}
-         else
-         if(!strncmp("lu",(char *)p,2))   {fprintf(fh,":%lu\r\n",va_arg(arg,unsigned long));p+=2;}
-         else
-         if(*p=='u')                      {fprintf(fh,":%u\r\n",va_arg(arg,unsigned int));p++;}
-         else
-#ifndef  TALKREDIS
-                                          // the -1 below is because the 1st digit is before the decimal point
-         if(!strncmp("lf",(char *)p,1))   {fprintf(fh,":%#.*e\r\n",DBL_DECIMAL_DIG-1,va_arg(arg,double));p+=2;} // render highest precision possible
-         else
-         if(*p=='f')                      {fprintf(fh,":%#.*e\r\n",FLT_DECIMAL_DIG-1,va_arg(arg,double));p++;} // render highest precision possible
-         else
-         
-#else    // Redis doesnt know about floating point so treat as string
-         
-         
-         if(!strncmp("lf",(char *)p,1))   {sprintf(numberBuf,"%#.*e",DBL_DECIMAL_DIG-1,va_arg(arg,double));fprintf(fh,"$%ld\r\n%s\r\n",strlen(numberBuf),numberBuf);p+=2;}
-         else
-         if(*p=='f')                      {sprintf(numberBuf,"%#.*e",FLT_DECIMAL_DIG-1,va_arg(arg,double));fprintf(fh,"$%ld\r\n%s\r\n",strlen(numberBuf),numberBuf);p+=2;}
-         else
-#endif
-         if(*p=='s')
-         {
-            byte *thisArg=va_arg(arg,byte *);
-            if(thisArg!=NULL)
-               fprintf(fh,"$%ld\r\n%s\r\n",strlen((char *)thisArg),(char *)thisArg);
-            else
-               fprintf(fh,"%s",nullBulkString);
-            ++p;
-         }
-         else
-         
-         if(*p=='[' || *p=='(') // these are for ZRANGE commands
-         {
-            byte *thisArg=va_arg(arg,byte *);
-            if(thisArg!=NULL)
-               fprintf(fh,"$%ld\r\n%c%s\r\n",strlen((char *)thisArg)+1,*p,(char *)thisArg);
-            else
-               fprintf(fh,"%s",nullBulkString);
-            p++;
-         }
-         else
-         
-         if(*p=='b') // %b takes two arguments the first is the buffer the second is the length
-         {
-            byte *thisArg=va_arg(arg,byte *);
-            size_t length=va_arg(arg,size_t);
-            
-            if(thisArg!=NULL)
-               fprintf(fh,"%s",nullBulkString);
-            else
-               fprintf(fh,"$%ld\r\n%s\r\n",length,thisArg);
-            ++p;
-         }
-        p=skipSpace(p);
-      }
-  }
-  va_end(arg);
-  if(fflush(fh)!=0)
-    return(RAMISFAIL);
-  return(RAMISOK);
-}
 
 int
 respSendReply(RESPROTO *rpp,FILE *fh)

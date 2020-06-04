@@ -144,9 +144,10 @@ printErrors(RESPCLIENT *rcp)
 void *sendNews(void *nothing)
 {
   RESPCLIENT *respClient=connectRespServer("127.0.0.1",6379);
+  nothing=nothing; // shut up a warning
   if(respClient)
   {
-    sleep(1); // wait for second to ensure the SUBSCRIBE thread is ready waiting
+    sleep(5); // wait for second to ensure the SUBSCRIBE thread is ready waiting
     sendRespCommand(respClient,"PUBLISH RamisNews %s","Global warming is something we need to fix now!");
   }
  pthread_exit(NULL);
@@ -164,6 +165,81 @@ int newsThread()
   return(1);
 }
 
+ #include <sys/time.h>
+double
+stopwatch()
+{
+ static struct timeval Wastime;
+ static struct timeval time;
+ static int init=0;
+ 
+ double now;
+ if(!init)
+ {
+   gettimeofday(&Wastime, NULL);
+   init=1;
+   return(0.0);
+ }
+ gettimeofday(&time, NULL);
+ now=time.tv_sec-Wastime.tv_sec;
+ now+=((double)time.tv_usec / 1e6);
+ 
+ 
+ return(now);
+}
+
+
+
+#define SZ 5
+#define N  250
+#define P printResponse
+byte buffer[SZ];
+void *testThread()
+{
+   RESPCLIENT *respClient=connectRespServer("127.0.0.1",6379);
+   //respClientWaitForever(respClient,1);
+  // byte *buffer=ramisMalloc(SZ);
+  int i;
+  buffer[1]='1';buffer[2]='2';buffer[3]='3';buffer[4]='\0';
+  buffer[SZ-1]='#';
+  
+  if(respClient)
+  {
+      for(i=0;i<N;i++)
+      {
+          P(sendRespCommand(respClient,"SET SPEEDKEY%d %b",i,buffer,(size_t)SZ));
+      }
+      for(i=0;i<N;i++)
+      {
+         P(sendRespCommand(respClient,"GET SPEEDKEY%d",i));
+      }
+      for(i=0;i<N;i++)
+      {
+          P(sendRespCommand(respClient,"DEL SPEEDKEY%d",i));
+      }
+
+  }
+ pthread_exit(NULL);
+}
+
+
+void test()
+{
+  pthread_t tid;
+  stopwatch();
+  int i;
+  for(i=0;i<4;i++)
+  {
+    pthread_create(&tid, NULL, testThread, NULL);
+    pthread_join(tid, NULL);
+   }
+  double elapsed=stopwatch();
+  printf("SECS=%lf TPS=%lf\n",elapsed,(double)(N*4*3)/elapsed);
+  pthread_exit(NULL);
+}
+
+
+
 
 int main(int argc, const char * argv[])
 {
@@ -172,32 +248,44 @@ int main(int argc, const char * argv[])
   int port = 6379;
   RESPCLIENT *respClient;
   RESPROTO   *response;
- /*
-   // got args?
-	if (argc != 3)
+  int i;
+  
+
+	if (argc == 3)
 	{
-		printf("usage: %s hostname port (port is usually 6379)\n", argv[0]);
-		return -1;
+      host=(char *)argv[1];
+     	// obtain port number
+      if (sscanf(argv[2], "%d", &port) <= 0)
+      {
+         fprintf(stderr, "%s: error: wrong port parameter: %s\n", argv[0],argv[2]);
+         return -2;
+      }
 	}
-   host=argv[1];
-   
-	// obtain port number
-	if (sscanf(argv[2], "%d", &port) <= 0)
-	{
-		fprintf(stderr, "%s: error: wrong port parameter: %s\n", argv[0],argv[2]);
-		return -2;
-	}
-  */
+
+  // test(); // Uncomment this and the line below to test speed
+  // exit(0);
+
+  
   
    // Here's my fake blob
    char *blob="The quick brown fox jumped over the lazy dog";
    size_t blobSize=strlen(blob);
    
-
+   
   
   respClient=connectRespServer(host,port);
+  respClientWaitForever(respClient,1);
+  
   if(respClient)
   {
+     response=sendRespCommand(respClient,"SET a %lf",22.0/7.0);
+     printResponse(response);
+     printErrors(respClient);
+     
+     response=sendRespCommand(respClient,"SET a %f",22.0/7.0);
+     printResponse(response);
+     printErrors(respClient);
+     
      response=sendRespCommand(respClient,"PING");
      printResponse(response);
      printErrors(respClient);
@@ -207,7 +295,7 @@ int main(int argc, const char * argv[])
          respClientWaitForever(respClient,1); // we're going to use subscribe
          response=sendRespCommand(respClient,"SUBSCRIBE RamisNews");
          printResponse(response); // this is the response from the subscribe command
-        
+         printf("\nNow you're going to wait 5 seconds for your SUBSCRIBE\n ");
          response=getRespReply(respClient); // now we're waiting for news to be published
          printResponse(response);
         
@@ -226,14 +314,7 @@ int main(int argc, const char * argv[])
      printResponse(response);
      printErrors(respClient);
 
-     // do something evil that will cause the server to block or mess things up
-     fprintf(respClient->fhToServer,"*100\r\n");
-     fflush(respClient->fhToServer);
-     
-     // this command will faail because of above
-     response=sendRespCommand(respClient,"SET key%d this_value",5);
-     printResponse(response);
-     printErrors(respClient);
+
      
      // disconnecting and reconnecting to the server here because of the evil above
      // It would be a safe practice to call this on errors. The RESP protocol has no re-sync ability
@@ -294,23 +375,41 @@ int main(int argc, const char * argv[])
      printResponse(response);
      printErrors(respClient);
      
-     // Since sendRespCommand can't do %04d lets talk using RESP's one line command method
-     for(int i=0;i<100;i++)
+     // Since sendRespCommand can't do %04d we have to to it in two stages
+     for(i=0;i<100;i++)
      {
-         fprintf(respClient->fhToServer,"SET mykey%04d %d\n",i,i);
-         fflush(respClient->fhToServer); // This is mandatory or you'll get out of sync with server
-         response=getRespReply(respClient);
+         char buf[11];
+         sprintf(buf,"mykey%04d",i);
+         response=sendRespCommand(respClient,"SET %s %d\n",buf,i);
          printResponse(response);
          printErrors(respClient);
      }
+     
+     for(i=0;i<10;i++)
+     {
+       char line[80];
+       sprintf(line,"SET RAWWRITE%03d %s%03d\r\n",i,"HELLO-I-AM-RAW",i);
+       write(respClient->socket,line,strlen(line));
+       response=getRespReply(respClient);
+       printResponse(response);
+       printErrors(respClient);
+     }
+     
+     response=sendRespCommand(respClient,"keys RAW*");
+     printResponse(response);
+     printErrors(respClient);
 
+     
      response=sendRespCommand(respClient,"keys mykey*");
      if(response->nItems!=101) // 101 because of array declaration
        printf("ERROR: Counts dont match\n");
+     else
+       printf("keys mykey* got 101 like we expected\n");
      
      response=sendRespCommand(respClient,"keys *");
      printResponse(response);
      printErrors(respClient);
   }
-   pthread_exit(NULL);
+  
+  exit(EXIT_SUCCESS);
 }

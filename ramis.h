@@ -8,9 +8,20 @@
 
 #ifndef ramis_h
 #define ramis_h
+#include <stdint.h>
+#include <float.h> 
 
 #define RAMISOK   1 // functions that return succsess or failure use these
 #define RAMISFAIL 0
+
+#ifndef  FLT_DECIMAL_DIG
+# define FLT_DECIMAL_DIG 9
+#endif
+#ifndef  DBL_DECIMAL_DIG
+# define DBL_DECIMAL_DIG 17
+#endif
+
+
 
 typedef double RFLOAT; 
 
