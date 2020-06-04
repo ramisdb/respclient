@@ -191,7 +191,7 @@ stopwatch()
 
 
 #define SZ 5
-#define N  250
+#define N  100000
 #define P printResponse
 byte buffer[SZ];
 void *testThread()
@@ -262,8 +262,8 @@ int main(int argc, const char * argv[])
       }
 	}
 
-  // test(); // Uncomment this and the line below to test speed
-  // exit(0);
+   test(); // Uncomment this and the line below to test speed
+   exit(0);
 
   
   

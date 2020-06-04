@@ -510,8 +510,8 @@ transmitRespCommand(RESPCLIENT *rcp,byte *buf,size_t n)
   struct pollfd ready;
   ssize_t nSent;
 
-  //memset(&ready,0,sizeof(ready));
-  //ready.events=POLLOUT; // |POLL_HUP|POLLERR;
+  memset(&ready,0,sizeof(ready));
+  ready.events=POLLOUT; // |POLL_HUP|POLLERR;
 
   do
   {
