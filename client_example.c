@@ -191,8 +191,9 @@ stopwatch()
 
 
 #define SZ 5
-#define N  100000
-#define P printResponse
+#define N  25000
+#define P  //printResponse
+#define THREADS 4
 byte buffer[SZ];
 void *testThread()
 {
@@ -225,16 +226,16 @@ void *testThread()
 
 void test()
 {
-  pthread_t tid;
+  pthread_t tid[THREADS];
   stopwatch();
   int i;
-  for(i=0;i<4;i++)
-  {
-    pthread_create(&tid, NULL, testThread, NULL);
-    pthread_join(tid, NULL);
-   }
+  for(i=0;i<THREADS;i++)
+    pthread_create(&tid[i], NULL, testThread, NULL);
+  for(i=0;i<THREADS;i++)
+    pthread_join(tid[i], NULL);
+   
   double elapsed=stopwatch();
-  printf("SECS=%lf TPS=%lf\n",elapsed,(double)(N*4*3)/elapsed);
+  printf("SECS=%lf TPS=%lf\n",elapsed,(double)(N*THREADS*3)/elapsed);
   pthread_exit(NULL);
 }
 
@@ -262,8 +263,8 @@ int main(int argc, const char * argv[])
       }
 	}
 
-   test(); // Uncomment this and the line below to test speed
-   exit(0);
+   //test(); // Uncomment this and the line below to test speed
+   //exit(0);
 
   
   

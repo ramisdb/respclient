@@ -18,6 +18,10 @@
 #include <float.h>
 #include <math.h>
 #include <string.h>
+#include <errno.h>
+#ifdef RP_USING_DUKTAPE
+#include "duktape.h"
+#endif
 #include "ramis.h"
 #include "resp_protocol.h"
 #include "respClient.h"
@@ -207,37 +211,40 @@ getRespReply(RESPCLIENT *rcp)
   do
   {
        parseRet=RESP_PARSE_INCOMPLETE;
-       // if waitForever is set we'll just block on the read instead of polling with a timeout
+       //if waitForever is set we'll just block on the read instead of polling with a timeout
        if(!rcp->waitForever)
-          if(!waitForRespData(rcp))
-               return(NULL);
-     
-       nread=read(rcp->socket,rcp->fromReadp,bufAvailable);
-       if(nread<=0)     // server closed or error
-         return(NULL);
-     
-       totalRead+=nread;
-     
-       if(nread==(ssize_t)bufAvailable)
+       if(!waitForRespData(rcp))
+            return(NULL);
+    
+       do
        {
-         rcp->fromBuf=respBufRealloc(rcp->rppFrom,rcp->fromBuf,rcp->fromBufSize+RESPCLIENTBUFSZ); // increase buffer size
-         if(!rcp->fromBuf)
+         nread=recv(rcp->socket,rcp->fromReadp,bufAvailable,0);
+         if(nread<=0)     // server closed or error
          {
-            rcp->rppFrom->errorMsg="Could not expand recieve buffer in getRespReply()";
+            rcp->rppFrom->errorMsg=strerror( errno );
+            reconnectRespServer(rcp);   // try reconnecting
             return(NULL);
          }
-         rcp->fromReadp=rcp->fromBuf+totalRead;
-         rcp->fromBufSize=rcp->fromBufSize+RESPCLIENTBUFSZ;
-         bufAvailable=rcp->fromBufSize-totalRead;
-   
-         if(isThereMoreComing(rcp)) // test for more data and keep reading if there is
+         
+         totalRead+=nread;
+         
+         if(nread==(ssize_t)bufAvailable) // we need a bigger buffer becuase it got filled
          {
-            rcp->fromReadp+=nread;
-            continue;
+            rcp->fromBuf=respBufRealloc(rcp->rppFrom,rcp->fromBuf,rcp->fromBufSize+RESPCLIENTBUFSZ);
+            if(!rcp->fromBuf)
+            {
+               rcp->rppFrom->errorMsg="Could not expand recieve buffer in getRespReply()";
+               return(NULL);
+            }
+            rcp->fromReadp=rcp->fromBuf+totalRead;
+            rcp->fromBufSize=rcp->fromBufSize+RESPCLIENTBUFSZ;
+            bufAvailable=rcp->fromBufSize-totalRead;
          }
-       }
-       else rcp->fromReadp+=nread;
-
+         else rcp->fromReadp=rcp->fromBuf+totalRead;
+         
+       } while(isThereMoreComing(rcp));
+     
+   
        parseRet=parseResProto(rcp->rppFrom,rcp->fromBuf,totalRead,newBuffer);
      
        if(parseRet==RESP_PARSE_ERROR)
@@ -323,7 +330,6 @@ lookupPctCode(char *s)
 }
 
 
-
 // RE va_list usage: https://wiki.sei.cmu.edu/confluence/display/c/MSC39-C.+Do+not+call+va_arg%28%29+on+a+va_list+that+has+an+indeterminate+value
 
 // Calculates the amount of buffer needed for sendRespCommand and ensures that allocation exists.
@@ -342,7 +348,6 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
    size_t *argSizes;            // the payload size of each fmt argument
    int     argCount;            // how many individual args are in the fmt;
 
-
    argCount=countRespCommandItems(fmt);
    argSizes=ramisCalloc(argCount,sizeof(size_t));
    if(!fmtCopy || !argCount)
@@ -358,6 +363,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
   argCount=0; // the code below uses this as an index into argSizes
   
   va_copy(arg,*argp);
+  RP_VA_ARG
   
   // account for the RESP array header
   bufNeeded+=sprintf(numberBuf,"*%d\r\n",countRespCommandItems(fmt));
@@ -386,23 +392,23 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             case pct: ++bufNeeded;++p;++thisArgLength;break;
             case   s:
             {
-              char *thisArg=va_arg(arg,char *);
+              char *thisArg=VA_ARG(arg,char *);
               bufNeeded+=len=strlen(thisArg);
               thisArgLength+=len;
               p+=pctCode->length;
             } break;
             case   b:
             {
-              char * thisArg=va_arg(arg,char *);
+              char * thisArg=(char *)VA_ARG(arg,byte *);
               thisArg=NULL; // this is just to shut up a warning for unused variable
-              size_t thisLen=len=va_arg(arg,size_t);
+              size_t thisLen=len=VA_ARG(arg,size_t);
               bufNeeded+=thisLen;
               thisArgLength+=len;
               p+=pctCode->length;
             } break;
             case   d:
             {
-              int thisArg=va_arg(arg,int);
+              int thisArg=VA_ARG(arg,int);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -410,7 +416,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case  ld:
             {
-              long thisArg=va_arg(arg,long);
+              long thisArg=VA_ARG(arg,long);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -418,7 +424,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case lld:
             {
-              long long thisArg=va_arg(arg,long long);
+              long long thisArg=VA_ARG(arg,long long);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -426,7 +432,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case   u:
             {
-              unsigned thisArg=va_arg(arg,unsigned);
+              unsigned thisArg=VA_ARG(arg,unsigned);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -434,7 +440,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case  lu:
             {
-              unsigned long thisArg=va_arg(arg,unsigned long);
+              unsigned long thisArg=VA_ARG(arg,unsigned long);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -442,7 +448,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case llu:
             {
-              unsigned long long thisArg=va_arg(arg,unsigned long long);
+              unsigned long long thisArg=VA_ARG(arg,unsigned long long);
               sprintf(numberBuf,pctCode->fmt,thisArg);
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -450,7 +456,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case   f:
             {
-              double thisArg=va_arg(arg,double);
+              double thisArg=VA_ARG(arg,double);
               sprintf(numberBuf,pctCode->fmt,FLT_DECIMAL_DIG-1,thisArg); // print to the precision of float
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -458,7 +464,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             } break;
             case  lf:
             {
-              double thisArg=va_arg(arg,double);
+              double thisArg=VA_ARG(arg,double);
               sprintf(numberBuf,pctCode->fmt,DBL_DECIMAL_DIG-1,thisArg); // print to the precision of double
               bufNeeded+=len=strlen(numberBuf);
               thisArgLength+=len;
@@ -485,7 +491,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
     *q=t; // put the saved character back into the format string and keep going
   }
   
- va_end(arg);
+ VA_END(arg);
   
  if(rcp->toBufSz<bufNeeded)
  { // allocate bigger than needed by RESPCLIENTBUFSZ for future commands that are approx this size
@@ -507,19 +513,21 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
 static int
 transmitRespCommand(RESPCLIENT *rcp,byte *buf,size_t n)
 {
-  struct pollfd ready;
+  //struct pollfd ready; // PBR WTF: Not ready to delete this code yet.
   ssize_t nSent;
 
-  memset(&ready,0,sizeof(ready));
-  ready.events=POLLOUT; // |POLL_HUP|POLLERR;
+  //memset(&ready,0,sizeof(ready));
+  //ready.events=POLLOUT; // |POLL_HUP|POLLERR;
 
   do
   {
-   // if(poll(&ready,1,RESPCLIENTTIMEOUT*1000)<0)
-   // {
-    //  rcp->rppFrom->errorMsg="Poll on server socket failed";
-    //  return(RAMISFAIL);
-   // }
+    /*
+    if(poll(&ready,1,RESPCLIENTTIMEOUT*1000)<0)
+    {
+      rcp->rppFrom->errorMsg="Poll on server socket failed";
+      return(RAMISFAIL);
+    }
+    */
     nSent=write(rcp->socket,buf,n);
     if(nSent<=0)
     {
@@ -547,13 +555,14 @@ sendRespCommand(RESPCLIENT *rcp,char *fmt,...)
   size_t *argSizes;
   int     argIndex=0;
   PCTCODEINFO *pctCode;
-  
 // char   *nullBulkString="$-1\r\n"; PBR WTF I have not yet implemented NULL transmission
   
   
   va_start(arg,fmt);
-  
+
   argSizes=sendRespBufNeeded(rcp,fmt,&arg);
+  RP_VA_ARG
+
   if(!argSizes)
    return(NULL); // parser or malloc error
    
@@ -607,71 +616,71 @@ sendRespCommand(RESPCLIENT *rcp,char *fmt,...)
             } break;
             case   s:
             {
-              char *thisArg=va_arg(arg,char *);
+              char *thisArg=VA_ARG(arg,char *);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case   b:
             {
-              char * thisArg=va_arg(arg,char *);
-              size_t thisLen=va_arg(arg,size_t);
+              char * thisArg=(char *)VA_ARG(arg,byte *);
+              size_t thisLen=VA_ARG(arg,size_t);
               memcpy(bufp,thisArg,thisLen);
               bufp+=thisLen;
               p+=pctCode->length;
             } break;
             case   d:
             {
-              int thisArg=va_arg(arg,int);
+              int thisArg=VA_ARG(arg,int);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case  ld:
             {
-              long thisArg=va_arg(arg,long);
+              long thisArg=VA_ARG(arg,long);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case lld:
             {
-              long long thisArg=va_arg(arg,long long);
+              long long thisArg=VA_ARG(arg,long long);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case   u:
             {
-              unsigned thisArg=va_arg(arg,unsigned);
+              unsigned thisArg=VA_ARG(arg,unsigned);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case  lu:
             {
-              unsigned long thisArg=va_arg(arg,unsigned long);
+              unsigned long thisArg=VA_ARG(arg,unsigned long);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case llu:
             {
-              unsigned long long thisArg=va_arg(arg,unsigned long long);
+              unsigned long long thisArg=VA_ARG(arg,unsigned long long);
               sprintf(bufp,pctCode->fmt,thisArg);
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case   f:
             {
-              double thisArg=va_arg(arg,double);
+              double thisArg=VA_ARG(arg,double);
               sprintf(bufp,pctCode->fmt,FLT_DECIMAL_DIG-1,thisArg); // print to the precision of float
               bufp+=strlen(bufp);
               p+=pctCode->length;
             } break;
             case  lf:
             {
-              double thisArg=va_arg(arg,double);
+              double thisArg=VA_ARG(arg,double);
               sprintf(bufp,pctCode->fmt,DBL_DECIMAL_DIG-1,thisArg); // print to the precision of double
               bufp+=strlen(bufp);
               p+=pctCode->length;
@@ -695,7 +704,7 @@ sendRespCommand(RESPCLIENT *rcp,char *fmt,...)
     *bufp++='\n';
     *q=t; // put the saved character back into the format string and keep going
   }
-  va_end(arg);
+  VA_END(arg);
   
    //fwrite(rcp->toBuf,(byte *)bufp-rcp->toBuf,1,stdout);
    // printf("\n\n");

@@ -6,6 +6,7 @@
 //  Copyright © 2020 P. B. Richards. All rights reserved.
 //
 
+
 #ifndef respClient_h
 #define respClient_h
 #include <stdarg.h>
@@ -64,5 +65,45 @@ char * respClienError(RESPCLIENT *rcp);
 
 
 #define respClientWaitForever(rcp,true_false) rcp->waitForever=true_false
+
+#ifndef RP_USING_DUKTAPE
+
+#define RP_VA_ARG
+#define VA_ARG(a,b) va_arg(a,b)
+#define VA_END(a) va_end(a)
+
+#else
+
+#define RP_VA_RET union rp_va_u  
+RP_VA_RET
+{
+   char *c;
+   size_t s;
+   int i;
+   long l;
+   long long L;
+   double d;
+   unsigned u;
+   unsigned long U;
+   unsigned long long I;
+};
+
+RP_VA_RET duk_rp_getarg(duk_context *ctx,const char *type);
+
+#define RP_VA_ARG duk_context *ctx=(duk_context *)va_arg(arg,void *);
+
+#define VA_ARG(a,b) ({\
+  RP_VA_RET u=duk_rp_getarg(ctx,#b);\
+  *((b *)(&u));\
+})
+
+#define VA_END(a) do {\
+  duk_pull(ctx,1);\
+  if(!duk_is_undefined(ctx,-1)){duk_push_string(ctx,"wrong number of arguments for exec(fmt,...)");duk_throw(ctx);}\
+  va_end(a);\
+} while(0)
+
+#endif /* RP_USING_DUKTAPE */
+
 
 #endif /* respClient_h */
