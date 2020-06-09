@@ -228,7 +228,7 @@ getRespReply(RESPCLIENT *rcp)
          
          totalRead+=nread;
          
-         if(nread==(ssize_t)bufAvailable) // we need a bigger buffer becuase it got filled
+         if(nread==(ssize_t)bufAvailable) // we need a bigger buffer because it got filled
          {
             rcp->fromBuf=respBufRealloc(rcp->rppFrom,rcp->fromBuf,rcp->fromBufSize+RESPCLIENTBUFSZ);
             if(!rcp->fromBuf)
@@ -244,7 +244,7 @@ getRespReply(RESPCLIENT *rcp)
          
        } while(isThereMoreComing(rcp));
      
-   
+       
        parseRet=parseResProto(rcp->rppFrom,rcp->fromBuf,totalRead,newBuffer);
      
        if(parseRet==RESP_PARSE_ERROR)
@@ -387,6 +387,10 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
       {
         ++p;
         pctCode=lookupPctCode(p);
+        
+        if(!pctCode)
+         goto unknownCode;
+   
         switch(pctCode->code)
         {
             case pct: ++bufNeeded;++p;++thisArgLength;break;
@@ -473,6 +477,7 @@ sendRespBufNeeded(RESPCLIENT *rcp,char *fmt,va_list *argp)
             case unknown:
             default:
             {
+              unknownCode:
               rcp->rppFrom->errorMsg="Invalid % code in sendRespCommand()";
               return(0);
             }

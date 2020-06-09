@@ -263,6 +263,7 @@ int main(int argc, const char * argv[])
       }
 	}
 
+ 
    //test(); // Uncomment this and the line below to test speed
    //exit(0);
 
@@ -279,15 +280,15 @@ int main(int argc, const char * argv[])
   
   if(respClient)
   {
-     response=sendRespCommand(respClient,"SET a %lf",22.0/7.0);
+     response=sendRespCommand(respClient,"PING");
+     printResponse(response);
+     printErrors(respClient);
+     
+     response=sendRespCommand(respClient,"SET a %lf%",22.0/7.0); // syntax error in %
      printResponse(response);
      printErrors(respClient);
      
      response=sendRespCommand(respClient,"SET a %f",22.0/7.0);
-     printResponse(response);
-     printErrors(respClient);
-     
-     response=sendRespCommand(respClient,"PING");
      printResponse(response);
      printErrors(respClient);
      

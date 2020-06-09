@@ -99,7 +99,7 @@ RP_VA_RET duk_rp_getarg(duk_context *ctx,const char *type);
 
 #define VA_END(a) do {\
   duk_pull(ctx,1);\
-  if(!duk_is_undefined(ctx,-1)){duk_push_string(ctx,"wrong number of arguments for exec(fmt,...)");duk_throw(ctx);}\
+  if(!duk_is_undefined(ctx,-1)){duk_push_string(ctx,"too many arguments for exec(fmt,...)");duk_throw(ctx);}\
   va_end(a);\
 } while(0)
 
