@@ -694,6 +694,8 @@ sendRespCommand(RESPCLIENT *rcp,char *fmt,...)
             default:
             {
               rcp->rppFrom->errorMsg="Invalid % code in sendRespCommand()";
+              ramisFree(argSizes);
+              ramisFree(fmtCopy);
               return(NULL);
             }
         }
@@ -716,7 +718,9 @@ sendRespCommand(RESPCLIENT *rcp,char *fmt,...)
    
   if(!transmitRespCommand(rcp,rcp->toBuf,(byte *)bufp-rcp->toBuf))
       return(NULL);
-  
+   
+  ramisFree(argSizes);
+  ramisFree(fmtCopy);
   return(getRespReply(rcp)); // everything was fine so far, so return the reply from the server 
 }
 

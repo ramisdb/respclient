@@ -239,6 +239,67 @@ void test()
   pthread_exit(NULL);
 }
 
+/*** ********************************************************************* **/
+#include <math.h>
+#define MAXVALTWEAKED 250e6
+void
+pftest()
+{
+  char buf[256];
+  char bufa[80];
+  FILE *fh=fopen("/Users/Cube/Downloads/bigdict.txt","r");
+  int i;
+  RESPROTO *response;
+  RESPITEM *item;
+  RESPCLIENT *rcp=connectRespServer("127.0.0.1",6379);
+  respClientWaitForever(rcp,1);
+   
+
+  double estimate;
+  double estimate2;
+  uint64_t iEstimate;
+
+  response=sendRespCommand(rcp,"DEL hll");
+  response=sendRespCommand(rcp,"DEL hll2");
+
+  printf("T,iE,E1,E2,Scale,Error,Error2\n");
+  for(i=1;i<MAXVALTWEAKED;i++)
+  {
+   
+    if(!fgets(bufa,80,fh))
+    {
+      fclose(fh);
+      fgets(bufa,80,fh);
+      fh=fopen("/Users/Cube/Downloads/bigdict.txt","r");
+    }
+    sprintf(buf,"%s %10X %d %.10lf ",bufa,i*7,i,(double)i/7);
+   
+    response=sendRespCommand(rcp,"PFADD hll %b",buf,(size_t)strlen(buf));
+    
+
+    for(char*p=buf;*p;p++)
+      *p^=0x4f;
+    response=sendRespCommand(rcp,"PFADD hll2 %b",buf,(size_t)strlen(buf));
+ 
+    if(i<50000 || (i+1)%2000==1 )
+    {
+      response=sendRespCommand(rcp,"PFCOUNT hll %b",buf,(size_t)strlen(buf));
+      estimate=(double)response->items[0].rinteger;
+      response=sendRespCommand(rcp,"PFCOUNT hll2 %b",buf,(size_t)strlen(buf));
+      estimate2=(double)response->items[0].rinteger;
+      double scale=(double)i/estimate;
+      double error=fabs(((double)i-estimate)/estimate);
+
+      iEstimate=round(estimate);
+ 
+      printf("%6d, %6lld, %10lf, %10lf, %10lf, %10lf, %10lf\n",i,iEstimate,estimate,estimate2,scale,error,fabs(((double)i-estimate2)/estimate2));
+    }
+  }
+
+}
+
+/* **************************************************************************** */
+
 
 
 
@@ -264,8 +325,8 @@ int main(int argc, const char * argv[])
 	}
 
  
-   //test(); // Uncomment this and the line below to test speed
-   //exit(0);
+    pftest(); // Uncomment this and the line below to test speed
+   exit(0);
 
   
   
